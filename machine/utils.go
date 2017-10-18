@@ -9,6 +9,7 @@ import (
 
 	"github.com/tidwall/finn"
 	"github.com/tidwall/redcon"
+	"net"
 )
 
 // This is a fixed value. It should never ever ever be changed"
@@ -283,6 +284,7 @@ func (conn *passiveConn) SetReadBuffer(bytes int)        {}
 func (conn *passiveConn) Detach() redcon.DetachedConn    { return nil }
 func (conn *passiveConn) ReadPipeline() []redcon.Command { return nil }
 func (conn *passiveConn) PeekPipeline() []redcon.Command { return nil }
+func (conn *passiveConn) NetConn() net.Conn              { return nil }
 
 func (conn *passiveConn) WriteError(msg string) {
 	conn.resps = append(conn.resps, errors.New(msg))
