@@ -397,5 +397,53 @@ func (m *Machine) doScriptableCommand(a finn.Applier, conn redcon.Conn, cmd redc
 	case "jdel":
 		// JDEL key path
 		return m.doJdel(a, conn, cmd, tx)
+
+	case "sadd":
+		return m.doSadd(a, conn, cmd, tx)
+	case "smembers":
+		return m.doSmembers(a, conn, cmd, tx)
+	case "srem":
+		// SREM key member [member ...]
+		return m.doSrem(a, conn, cmd, tx)
+
+	case "hget":
+		// HGET key field
+		return m.doHget(a, conn, cmd, tx)
+	case "hset":
+		// HSET key field value
+		return m.doHget(a, conn, cmd, tx)
+	case "hmset":
+		// HMSET key field value [field value ...]
+		return m.doHmset(a, conn, cmd, tx)
+
+	case "llen":
+		// LLEN key
+		return m.doLlen(a, conn, cmd, tx)
+	case "lpush":
+		// LPUSH key value [value ...]
+		return m.doLpush(a, conn, cmd, tx)
+	case "lpop":
+		// LPOP key
+		return m.doLpop(a, conn, cmd, tx)
+	case "rpoplpush":
+		// RPOPLPUSH source destination
+		return m.doRpoplpush(a, conn, cmd, tx)
+	case "lrem":
+		// LREM key count value
+		return m.doLrem(a, conn, cmd, tx)
+	case "lrange":
+		// LRANGE key start stop
+		return m.doLrange(a, conn, cmd, tx)
+
+	case "zadd":
+		// ZADD key score member [score member ...]
+		return m.doZadd(a, conn, cmd, tx)
+	case "zcard":
+		// ZCARD key
+		return m.doZcard(a, conn, cmd, tx)
+	case "zrangebyscore":
+		// ZRANGEBYSCORE key min max [WITHSCORES] [LIMIT offset count]
+		return m.doZrangebyscore(a, conn, cmd, tx)
+
 	}
 }
