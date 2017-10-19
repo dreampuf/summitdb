@@ -444,6 +444,9 @@ func (m *Machine) doScriptableCommand(a finn.Applier, conn redcon.Conn, cmd redc
 	case "zrangebyscore":
 		// ZRANGEBYSCORE key min max [WITHSCORES] [LIMIT offset count]
 		return m.doZrangebyscore(a, conn, cmd, tx)
+	case "zrem":
+		//ZREM key member [member ...]
+		return m.doZrem(a, conn, cmd, tx)
 
 	}
 }

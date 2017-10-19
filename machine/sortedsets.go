@@ -85,6 +85,43 @@ func (m *Machine) doZadd(a finn.Applier, conn redcon.Conn, cmd redcon.Command, t
 	})
 }
 
+func (m *Machine) doZrem(a finn.Applier, conn redcon.Conn, cmd redcon.Command, tx *buntdb.Tx) (interface{}, error) {
+	//ZREM key member [member ...]
+
+	if len(cmd.Args) < 3 {
+		return nil, finn.ErrWrongNumberOfArguments
+	}
+
+	key := string(cmd.Args[1])
+	result := 0
+	return m.writeDoApply(a, conn, cmd, tx, func(tx *buntdb.Tx) (interface{}, error) {
+		json, err := tx.Get(key)
+		if err != nil && err != buntdb.ErrNotFound {
+			return result, err
+		}
+		// set as a string
+		for i := 2; i < len(cmd.Args); i ++ {
+			member := string(cmd.Args[i])
+			if !gjson.Get(json, member).Exists() {
+				continue
+			}
+			json, err = sjson.Delete(json, member)
+			if err != nil {
+				return result, fmt.Errorf("ERR %v", err)
+			}
+			result ++
+		}
+		_, _, err = tx.Set(key, json, nil)
+		if err != nil {
+			return result, err
+		}
+		return result, nil
+	}, func(v interface{}) error {
+		conn.WriteInt(result)
+		return nil
+	})
+}
+
 func (m *Machine) doZrangebyscore(a finn.Applier, conn redcon.Conn, cmd redcon.Command, tx *buntdb.Tx) (interface{}, error) {
 	// ZRANGEBYSCORE key min max [WITHSCORES] [LIMIT offset count]
 	alen := len(cmd.Args)
