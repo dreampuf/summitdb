@@ -6,9 +6,9 @@ import (
 	"github.com/tidwall/buntdb"
 	"github.com/tidwall/gjson"
 	"fmt"
-	"github.com/tidwall/sjson"
 	"strconv"
 	"sort"
+	"encoding/json"
 )
 
 /*
@@ -46,41 +46,48 @@ func (m *Machine) doZcard(a finn.Applier, conn redcon.Conn, cmd redcon.Command, 
 func (m *Machine) doZadd(a finn.Applier, conn redcon.Conn, cmd redcon.Command, tx *buntdb.Tx) (interface{}, error) {
 	// ZADD key [NX|XX] [CH] [INCR] score member [score member ...]
 	// Only support 'ZADD key score member [score member ...]'
-	var newjson string
 	if len(cmd.Args) < 4 {
-		return nil, finn.ErrWrongNumberOfArguments
+		return 0, finn.ErrWrongNumberOfArguments
 	}
 
 	key := string(cmd.Args[1])
 	result := 0
 	return m.writeDoApply(a, conn, cmd, tx, func(tx *buntdb.Tx) (interface{}, error) {
-		json, err := tx.Get(key)
+		jsonval, err := tx.Get(key)
 		if err != nil && err != buntdb.ErrNotFound {
-			return nil, err
+			return result, err
 		}
+		var dict map[string]float64
+		err = json.Unmarshal([]byte(jsonval), &dict)
+		if err != nil {
+			dict = make(map[string]float64)
+		}
+
 		// set as a string
 		for i := 2; i < len(cmd.Args); i += 2 {
 			kkey := string(cmd.Args[i+1])
 			kscore, err := strconv.ParseFloat(string(cmd.Args[i]), 64)
 			if err != nil {
-				return nil, fmt.Errorf("ERR %v", err)
+				return result, fmt.Errorf("ERR %v", err)
 			}
-			if !gjson.Get(json, kkey).Exists() {
+			_, exist := dict[kkey]
+			if !exist {
 				result += 1
 			}
-			newjson, err = sjson.Set(json, kkey, kscore)
-			if err != nil {
-				return nil, fmt.Errorf("ERR %v", err)
-			}
-			json = newjson
+			dict[kkey] = kscore
 		}
-		_, _, err = tx.Set(key, json, nil)
+		jsonByte, err := json.Marshal(dict)
 		if err != nil {
-			return nil, err
+			return result, err
 		}
-		return nil, nil
+		_, _, err = tx.Set(key, string(jsonByte), nil)
+		if err != nil {
+			return result, err
+		}
+		return result, nil
 	}, func(v interface{}) error {
-		conn.WriteInt(result)
+		n, _ := v.(int)
+		conn.WriteInt(n)
 		return nil
 	})
 }
@@ -95,23 +102,31 @@ func (m *Machine) doZrem(a finn.Applier, conn redcon.Conn, cmd redcon.Command, t
 	key := string(cmd.Args[1])
 	result := 0
 	return m.writeDoApply(a, conn, cmd, tx, func(tx *buntdb.Tx) (interface{}, error) {
-		json, err := tx.Get(key)
+		jsonval, err := tx.Get(key)
 		if err != nil && err != buntdb.ErrNotFound {
 			return result, err
 		}
+
+		var dict map[string]float64
+		err = json.Unmarshal([]byte(jsonval), &dict)
+		if err != nil {
+			dict = make(map[string]float64)
+		}
+
 		// set as a string
 		for i := 2; i < len(cmd.Args); i ++ {
 			member := string(cmd.Args[i])
-			if !gjson.Get(json, member).Exists() {
+			if _, exist := dict[member]; !exist {
 				continue
 			}
-			json, err = sjson.Delete(json, member)
-			if err != nil {
-				return result, fmt.Errorf("ERR %v", err)
-			}
+			delete(dict, member)
 			result ++
 		}
-		_, _, err = tx.Set(key, json, nil)
+		jsonByte, err := json.Marshal(dict)
+		if err != nil {
+			return result, fmt.Errorf("ERR %v", err)
+		}
+		_, _, err = tx.Set(key, string(jsonByte), nil)
 		if err != nil {
 			return result, err
 		}
@@ -176,7 +191,10 @@ func (m *Machine) doZrangebyscore(a finn.Applier, conn redcon.Conn, cmd redcon.C
 		sort.Slice(klist, func(i, j int) bool {
 			return klist[i].Value > klist[j].Value
 		})
-		conn.WriteArray(len(klist))
+
+		type strpair struct { k, score string }
+		var resultList []strpair
+		total := 0
 		for _, i := range klist {
 			if i.Value < min || i.Value > max {
 				continue
@@ -185,12 +203,21 @@ func (m *Machine) doZrangebyscore(a finn.Applier, conn redcon.Conn, cmd redcon.C
 				continue
 			}
 			counter += 1
-			conn.WriteBulkString(i.Key)
-			if WITHSCORES {
-				conn.WriteBulkString(strconv.FormatFloat(i.Value, 'E', -1, 64))
-			}
+			resultList = append(resultList, strpair{ i.Key, strconv.FormatFloat(i.Value, 'E', -1, 64)})
 			if counter < count {
 				break
+			}
+			total ++
+		}
+		if WITHSCORES {
+			conn.WriteArray(len(resultList) * 2)
+		} else {
+			conn.WriteArray(len(resultList))
+		}
+		for _, item := range resultList {
+			conn.WriteBulkString(item.k)
+			if WITHSCORES {
+				conn.WriteBulkString(item.score)
 			}
 		}
 		return nil

@@ -7,6 +7,8 @@ import (
 	"github.com/tidwall/gjson"
 	"github.com/tidwall/sjson"
 	"strconv"
+	"encoding/json"
+	"fmt"
 )
 
 
@@ -97,7 +99,7 @@ func (m *Machine) doLpush(a finn.Applier, conn redcon.Conn, cmd redcon.Command, 
 			json = "[]"
 		}
 		for i := 2; i < len(cmd.Args); i ++ {
-			json, err = sjson.SetRaw(json, "-1", string(cmd.Args[i]))
+			json, err = sjson.Set(json, "-1", string(cmd.Args[i]))
 			if err != nil {
 				return result, err
 			}
@@ -138,7 +140,7 @@ func (m *Machine) doLpop(a finn.Applier, conn redcon.Conn, cmd redcon.Command, t
 		if err != nil {
 			return nil, err
 		}
-		return res.Raw, nil
+		return res.Str, nil
 	}, func(v interface{}) error {
 		if v == nil {
 			conn.WriteNull()
@@ -187,7 +189,7 @@ func (m *Machine) doRpoplpush(a finn.Applier, conn redcon.Conn, cmd redcon.Comma
 		if err == buntdb.ErrNotFound {
 			destJson = "[]"
 		}
-		destJson, err = sjson.Set(destJson, "0", sourceItem.Raw)
+		destJson, err = sjson.Set(destJson, "0", sourceItem.Str)
 		if err != nil {
 			return nil, err
 		}
@@ -195,7 +197,7 @@ func (m *Machine) doRpoplpush(a finn.Applier, conn redcon.Conn, cmd redcon.Comma
 		if err != nil {
 			return nil, err
 		}
-		return sourceItem.Raw, nil
+		return sourceItem.Str, nil
 	}, func(v interface{}) error {
 		if v == nil {
 			conn.WriteNull()
@@ -223,13 +225,17 @@ func (m *Machine) doLrem(a finn.Applier, conn redcon.Conn, cmd redcon.Command, t
 	}
 	value := string(cmd.Args[3])
 	return m.writeDoApply(a, conn, cmd, tx, func(tx *buntdb.Tx) (interface{}, error) {
-		json, err := tx.Get(key)
+		jsonValue, err := tx.Get(key)
 		if err != nil && err != buntdb.ErrNotFound {
 			return 0, err
 		}
-		ary := gjson.Parse(json).Array()
-		if ary == nil || len(ary) == 0 {
-			return 0, err
+		var ary []string
+		err = json.Unmarshal([]byte(jsonValue), &ary)
+		if err != nil {
+			return 0, fmt.Errorf("ERR: %v", err)
+		}
+		if len(ary) == 0 {
+			return 0, nil
 		}
 		// equal 0 solution by default
 		effected := 0
@@ -243,19 +249,21 @@ func (m *Machine) doLrem(a finn.Applier, conn redcon.Conn, cmd redcon.Command, t
 			delta = -1
 			n = - count
 		}
-		newjson := "[]"
+		newAry := []string{}
 		for i := start; ; i += delta {
-			if ary[i].Raw != value {
-				newjson, err = sjson.SetRaw(newjson, "-1", ary[i].Raw)
-				if err != nil {
-					return effected, err
-				}
+			if ary[i] != value {
+				newAry = append(newAry)
 				effected ++
 			}
 			n--
 			if n == 0 { break }
 		}
-		_, _, err = tx.Set(key, newjson, nil)
+
+		jsonByte, err := json.Marshal(newAry)
+		if err != nil {
+			return effected, fmt.Errorf("ERR: %v", err)
+		}
+		_, _, err = tx.Set(key, string(jsonByte), nil)
 		if err != nil {
 			return effected, err
 		}
